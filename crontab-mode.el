@@ -16,7 +16,7 @@
 ;;   cumbersome.  My method is to keep the crontab as a file,
 ;;   under rcs, and check in the changes with 'C-c C-c' after
 ;;   editing.
-;; 
+;;
 ;; * The remote systems are expected to share a filesystem.
 ;;   If they dont, modify crontab-shell or crontab-apply to
 ;;   suit your needs.
@@ -28,8 +28,11 @@
 ;;; History:
 ;;  2003-03-16: Updated URL and contact info
 ;;  2004-02-26: Use ssh to apply crontabs to remote hosts.
+;;  2017-02-03: Properly highlight @hourly, @monthly, etc keywords
 
 ;;; Code:
+
+(require 'rx)
 
 (defvar crontab-suffix ".crontab"
   "*Suffix for crontab buffers.")
@@ -50,8 +53,16 @@
 (defvar crontab-unit-regexp "\\(\\(?:[-,0-9]+\\|\\*\\)\\(?:/[0-9]+\\)?\\)"
   "A regexp which matches a cron time unit.")
 
+(defvar crontab-keyword-unit-regexp
+  (rx (group (or "@reboot" "@yearly" "@annually"
+                 "@monthly" "@weekly" "@daily" "@hourly")))
+  "A regexp which matches a keyword cron time unit.")
+
 (defvar crontab-sep-regexp "[ \t]+"
   "A regexp to match whitespace seperating cron time units.")
+
+(defvar crontab-command-regexp "\\(.*\\)$"
+  "A regexp to match the command to be run")
 
 (defvar crontab-ruler "
 # min   hour    day     month   day-of-week command
@@ -82,25 +93,32 @@
    ;; 50 * * * * /usr/gnu/bin/bash
    (cons
     (concat "^"
-	    crontab-unit-regexp crontab-sep-regexp
-	    crontab-unit-regexp crontab-sep-regexp
-	    crontab-unit-regexp crontab-sep-regexp
-	    crontab-unit-regexp crontab-sep-regexp
-	    crontab-unit-regexp crontab-sep-regexp
-	    "\\(.*\\)$")
+            crontab-unit-regexp crontab-sep-regexp
+            crontab-unit-regexp crontab-sep-regexp
+            crontab-unit-regexp crontab-sep-regexp
+            crontab-unit-regexp crontab-sep-regexp
+            crontab-unit-regexp crontab-sep-regexp
+            crontab-command-regexp)
     '((1 font-lock-keyword-face)
       (2 font-lock-keyword-face)
       (3 font-lock-keyword-face)
       (4 font-lock-keyword-face)
       (5 font-lock-keyword-face)
-      (6 font-lock-string-face))) )
+      (6 font-lock-string-face)))
+   ;; Keyword cron lines
+   ;; @hourly /usr/gnu/bin/bash
+   (cons
+    (concat "^"
+            crontab-keyword-unit-regexp crontab-sep-regexp
+            crontab-command-regexp)
+    '((1 font-lock-keyword-face)
+      (2 font-lock-string-face))))
   "Info for function `font-lock-mode'.")
 
 (defvar crontab-mode-map nil
   "Keymap used in `crontab-mode'.")
 
-(if crontab-mode-map
-  ()
+(unless crontab-mode-map
   (setq crontab-mode-map (make-sparse-keymap))
   (define-key crontab-mode-map "\C-c\C-c" 'crontab-save-and-apply)
   (define-key crontab-mode-map "\C-cc" 'crontab-save-and-apply)
@@ -148,8 +166,7 @@ Sets up command `font-lock-mode'.
   (setq comment-start "#")
   (setq comment-start-skip "#+ *")
   ;;
-  (make-local-variable 'font-lock-defaults)
-  (setq font-lock-defaults '(crontab-font-lock-keywords))
+  (setq-local font-lock-defaults '(crontab-font-lock-keywords))
   ;; Add to the end of the buffers save hooks.
   (add-hook 'after-save-hook 'crontab-after-save t t)
   ;;
